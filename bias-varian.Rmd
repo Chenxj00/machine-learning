@@ -1,0 +1,79 @@
+---
+
+
+## Problem1
+
+```{r}
+#problem1
+#1. For mse of train data, we would except mse become lower as the degree of freedom increase. For the test data, we would except the mse of the linear model would be the smallest.
+
+
+true.f <- function(x) {
+  f.out <- (3*x-5)
+  return(f.out)
+}
+
+
+sim.training <- function(x.test=c(16)
+                         ) {
+  n <- 100
+  sd.error <- 2
+    x <- seq(4,20,length=n)
+    y <- true.f(x)+rnorm(n,sd=sd.error)
+    y.test <- true.f(x.test)+rnorm(length(x.test),sd=sd.error)
+
+  return(list(data.train=data.frame(x=x,y=y),
+              y.test=y.test))
+}
+
+
+predict.test.case <- function(degree,
+                              data,
+                              x.test) {
+  model <- lm(y~poly(x,degree=degree),data=data)
+  y.test.hat <- predict(model,newdata=data.frame(x=x.test))
+  return(y.test.hat)
+}
+
+poly.predict <- function(degree.vec,
+                          data,
+                          x.test) {
+    pred <- sapply(degree.vec,
+                 predict.test.case,
+                 data=data,
+                 x.test=x.test)
+    rownames(pred)  <- paste("TestCase",1:length(x.test),sep="")
+  colnames(pred)  <- paste("D",degree.vec,sep="")
+  return(pred)
+}
+
+
+
+set.seed(1)
+#get the true value of y
+data.for.use.test=sim.training(c(21:30))
+y.train=data.for.use.test$data.train
+y.true.test=data.for.use.test$y.test
+
+#calculate mse of test data
+mse.test=rep(0,3)
+for(i in 1:3){
+  mse.test[i]=y.predict.test=mean((poly.predict(i,y.train,c(21:30))-y.true.test)^2)
+}
+
+#calculate mse of train data
+mse.train=rep(0,3)
+y.true.train=y.train[,2]
+x.train=y.train[,1]
+for(i in 1:3){
+  mse.train[i]=y.predict.test=mean((poly.predict(i,y.train,x.train)-y.true.train)^2)
+}
+
+print((mse.train))
+print((mse.test))
+plot(x=1:3,y=mse.train,type = "l",col="red",ylim=c(0,24))
+lines(mse.test,col="green")
+legend("topleft",legend = c("mse of train data","mse of test data"),fill=c("red","green"))
+##the plot is the same as what we except
+```
+

@@ -1,0 +1,108 @@
+---
+
+
+
+```{r,echo=F}
+### all images corresponding to digit "3"
+zip.3 <- read.table("zip3.txt", header=FALSE, sep=",")
+zip.3 <- as.matrix(zip.3)
+### all images corresponding to digit "5"
+zip.5 <- read.table("zip5.txt", header=FALSE, sep=",")
+zip.5 <- as.matrix(zip.5)
+### n.3 and n.5 are the total number of "3"s and "5"s, respectively. 
+n.3 <- length(zip.3[,1])
+n.5 <- length(zip.5[,1])
+### combine two data sets together 
+X.full.zip <-rbind(zip.3,zip.5)
+
+### define response (labels)
+Y.full.zip <- c(rep("Three",n.3),rep("Five",n.5))
+```
+
+
+
+# Section III: Data-Splitting
+
+
+```{r}
+## Solution goes here ---------
+library('dplyr')
+set.seed(1)
+full.data.zip=as_tibble(X.full.zip)%>%mutate(Y=Y.full.zip)
+n=nrow(full.data.zip)
+test.subset <- sample(1:n,n*0.2,replace=FALSE)
+test.data <-  full.data.zip[test.subset,]
+train.data <- full.data.zip[-test.subset,]
+```
+
+
+# Section V: Modify KNN Function
+
+```{r}
+## Solution goes here ---------
+#distance function
+distance=function(x,y){
+  dist=sqrt(sum((x-y)^2))
+  return(dist)
+}
+
+#one x with several feature
+KNN.dec.one <- function(x.test,
+                         X.data,
+                         Y.data,
+                         K = 5) {
+  #n <- nrow(X.data)
+  dists.vec <- apply(X.data,1,function(y) distance(x.test,y))
+  neighbors  <- order(dists.vec)[1:K]
+  neighb.dir <-  Y.data[neighbors]
+  choice.fin<- names(which.max(table(neighb.dir)))
+  return(choice.fin)
+}
+
+#several x one time
+KNN.dec.mul=function(x.test.matrix,X.data,Y.data,K=5){
+  choice=apply(x.test.matrix,1,function(x) KNN.dec.one(x,X.data,Y.data,K))
+  return(choice)
+}
+```
+
+
+
+```{r}
+
+train=KNN.dec.mul(train.data[,1:256],as.matrix(train.data[,1:256]),as.matrix(train.data[,257]))
+test=KNN.dec.mul(test.data[,1:256],as.matrix(train.data[,1:256]),as.matrix(train.data[,257]))
+train.error=sum(train!=train.data[,257])/nrow(train.data[,257])
+test.error=sum(test!=test.data[,257])/nrow(test.data[,257])
+train.error
+test.error
+```
+
+
+# Section VI: Tuning Parameter
+
+4) The final task requires students to compute the training error and test error for several odd values of $k$. Plot both training and test error as a function of $k$. Try choosing values of $k$ at least equal to the vector $1,3,5,7,9,11$.  
+
+```{r}
+
+
+test.re.vec=lapply(as.list(c(1,3,5,7,9,11)),function(x)  KNN.dec.mul(K=x,x.test.matrix=test.data[,1:256],X.data=as.matrix(train.data[,1:256]),Y.data=as.matrix(train.data[,257])))
+
+test.error.vec=lapply(test.re.vec, function(x) sum(x!=test.data[,257])/nrow(test.data[,257]))
+
+train.re.vec=lapply(as.list(c(1,3,5,7,9,11)),function(x)  KNN.dec.mul(K=x,x.test.matrix=train.data[,1:256],X.data=as.matrix(train.data[,1:256]),Y.data=as.matrix(train.data[,257])))
+
+train.error.vec=lapply(train.re.vec, function(x) sum(x!=train.data[,257])/nrow(train.data[,257]))
+
+train.error.vec
+test.error.vec
+
+
+```
+```{r}
+plot(x=c(1,3,5,7,9,11),y=unlist(test.error.vec),col="red",type="l",ylim=c(0,0.04),xlab="K",ylab="error rate")
+lines(c(1,3,5,7,9,11),unlist(train.error.vec),col="blue")
+legend("topleft",legend=c("train error rate","test error rate"), fill=c("blue","red"),cex=1)
+
+```
+

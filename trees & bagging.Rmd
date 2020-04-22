@@ -1,0 +1,82 @@
+---
+
+
+```{r}
+library(rpart)
+library(randomForest )
+p1.train.6=read.table('/Users/chenxj00/Documents/Statistical Machine Learning/train_6.txt',header = F,sep=",")
+p1.train.5=read.table('/Users/chenxj00/Documents/Statistical Machine Learning/train_5.txt',header = F,sep=",")
+
+p1.test=read.table('/Users/chenxj00/Documents/Statistical Machine Learning/lab5/zip_test.txt',header = F,sep="")
+
+```
+
+```{r}
+p1.full.5=cbind(V1=as.factor(5),p1.train.5)
+p1.full.6=cbind(V1=as.factor(6),p1.train.6)
+p1.train.full=rbind(p1.full.5,p1.full.6)
+p1.test.5=p1.test[p1.test[,1]==5,]
+p1.test.6=p1.test[p1.test[,1]==6,]
+p1.test.full=rbind(p1.test.5,p1.test.6)
+```
+
+```{r}
+#decision tree
+model1=rpart(V1~.,data=p1.train.full,parms=list(split='information'))
+test.error1=1-sum(predict(model1,p1.test.full,type="class")==p1.test.full$V1)/nrow(p1.test.full)
+test.error1
+```
+```{r}
+#bagging
+set.seed(1)
+K <- c(1:10,100,200)
+n.train <- nrow(p1.train.full)
+n.test <- nrow(p1.test.full)
+
+
+############################################################
+# Bagging Trees 
+############################################################
+
+# Make a bagged estimate for kyphosis
+out.list <- list(length(K))
+out.vals <- matrix(rep(NA,length(K)*nrow(p1.test.full)),ncol=length(K))
+
+# Make a bagged estimate for kyphosis
+for (i in 1:length(K)){
+  # Make a new training set
+  inds <- sample(1:n.train,n.train,replace=TRUE)
+  df.temp <- p1.train.full[inds,]
+  fit.temp <- rpart(V1 ~ ., 
+                    data=df.temp,parms=list(split='information'))
+  out.list[[i]] <- fit.temp
+  out.vals[,i] <- predict(fit.temp,p1.test.full,type="class")
+}
+
+for (i in 1:ncol(out.vals)){
+  for(j in 1:nrow(out.vals)){
+    out.vals[j,i]=ifelse(out.vals[j,i]==1,5,6)
+  }
+}
+
+test.error2=rep(NA,length(K))
+for (i in 1:length(K)){
+  test.error2[i]=1-(sum(out.vals[,i]==p1.test.full$V1)/nrow(p1.test.full))
+}
+test.error2
+test.error2[c(10,11,12)]
+#no
+```
+
+```{r}
+model3=randomForest(V1~.,data=p1.train.full,xtest=p1.test.full[,-1],ytest=as.factor(p1.test.full[,1]),ntree=200)
+test.error3=1-sum(model3$test$predicted==p1.test.full$V1)/nrow(p1.test.full)
+test.error3
+```
+
+```{r}
+test.error1
+test.error2
+test.error3
+```
+

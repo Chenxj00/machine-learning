@@ -1,0 +1,459 @@
+---
+title: "5261pro"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tidyquant)
+tickers=c("AAPL","MSFT","IBM","WMT","KO","MCD","PFE","JNJ","UNH","JPM","GS","TRV",
+          "BA","MMM","CAT")
+#choose main stocks in DWI 30 stocks, the first three come from IT industry,next three from consumption industry, then health care, then finance and the last is industrial enginnering
+```
+```{r}
+library("purrr")
+library("tidyr")
+tickers=c("AAPL","MSFT","IBM","WMT","KO","MCD","PFE","JNJ","UNH","JPM","GS","TRV",
+          "BA","MMM","CAT")
+prices <- tq_get(tickers,
+                 from = "2018-01-01",
+                 to="2020-03-01",
+                 get = "stock.prices")
+
+close_price=prices[,c(1,2,6)]%>%pivot_wider(names_from=symbol,values_from=close)
+#get the close price and change the format of data that can be easily handled
+summary(close_price[,2:16])
+mean=apply(close_price[,2:16],2, function(x) sd(x))
+sd=apply(close_price[,2:16],2, function(x) mean(x))
+```
+
+```{r}
+library('ggplot2')
+prices[1:1629,] %>%
+  ggplot(aes(x = date, y = close, color = symbol)) +
+  geom_line() +
+  facet_wrap(~symbol,scales = 'free_y') +
+  theme_classic() +
+  labs(x = 'Date',
+       y = "Adjusted Price",
+       title = "Price Chart") +
+  scale_x_date(date_breaks = "year",
+               date_labels = "%b\n%y")
+
+prices[1630:3258,] %>%
+  ggplot(aes(x = date, y = close, color = symbol)) +
+  geom_line() +
+  facet_wrap(~symbol,scales = 'free_y') +
+  theme_classic() +
+  labs(x = 'Date',
+       y = "Adjusted Price",
+       title = "Price Chart") +
+  scale_x_date(date_breaks = "year",
+               date_labels = "%b\n%y")
+
+prices[3259:4887,] %>%
+  ggplot(aes(x = date, y = close, color = symbol)) +
+  geom_line() +
+  facet_wrap(~symbol,scales = 'free_y') +
+  theme_classic() +
+  labs(x = 'Date',
+       y = "Adjusted Price",
+       title = "Price Chart") +
+  scale_x_date(date_breaks = "year",
+               date_labels = "%b\n%y")
+
+prices[4888:6516,] %>%
+  ggplot(aes(x = date, y = close, color = symbol)) +
+  geom_line() +
+  facet_wrap(~symbol,scales = 'free_y') +
+  theme_classic() +
+  labs(x = 'Date',
+       y = "Adjusted Price",
+       title = "Price Chart") +
+  scale_x_date(date_breaks = "year",
+               date_labels = "%b\n%y")
+
+prices[6517:8145,] %>%
+  ggplot(aes(x = date, y = close, color = symbol)) +
+  geom_line() +
+  facet_wrap(~symbol,scales = 'free_y') +
+  theme_classic() +
+  labs(x = 'Date',
+       y = "Adjusted Price",
+       title = "Price Chart") +
+  scale_x_date(date_breaks = "year",
+               date_labels = "%b\n%y")
+```
+
+
+```{r}
+#data clean
+is.na(close_price)%>%colSums
+#no NAs
+```
+
+```{r}
+#since the data are all time series data, and we can not seperate the data randomly into train,valid and test set, so we chose first 70% as train and 30% test. 
+train=close_price[1:round(0.7*nrow(close_price)),]
+test=close_price[round(0.7*nrow(close_price)):nrow(close_price),]
+
+```
+```{r}
+#first let try MA to predict the stock price
+
+MA=function(X,N){
+  pre=matrix(NA,ncol=ncol(X),nrow=nrow(X))
+  for( i in (N+1):nrow(X)){
+    pre[i,]=colSums(X[(i-N):(i-1),])/N
+  }
+  return(pre)
+}
+
+pre_mat_MA=matrix(rep(NA),nrow(train)*(ncol(train)-1)*20)
+dim(pre_mat_MA)=c(nrow(train),ncol(train)-1,20)
+rmse_MA=matrix(rep(NA,20*(ncol(train)-1)),nrow = 20,ncol=ncol(train)-1)
+mape_MA=matrix(rep(NA,20*(ncol(train)-1)),nrow = 20,ncol=ncol(train)-1)
+for(i in 1:20){
+  pre_mat_MA[,,i]=MA(train[,2:ncol(train)],N=i)
+  rmse_MA[i,]=sqrt(colSums((pre_mat_MA[(i+1):nrow(train),,i]-train[(i+1):nrow(train),2:ncol(train)])^2))
+  mape_MA[i,]=colSums(abs((pre_mat_MA[(i+1):nrow(train),,i]-train[(i+1):nrow(train),2:ncol(train)])/train[(i+1):nrow(train),2:ncol(train)]))
+}
+
+
+```
+
+```{r}
+library(dplyr)
+rmse_pl_MA=t(rmse_MA)%>%as_tibble
+#rmse_pl[,21]=colnames(train)[2:ncol(train)]
+stocks=colnames(train)[2:ncol(train)]
+rmse_pl_MA=cbind(stocks,rmse_pl_MA)%>%as_tibble
+colnames(rmse_pl_MA)=c("stocks",c(1:20))
+rmse_pl_pt_MA=rmse_pl_MA%>%pivot_longer(cols = -"stocks",values_to = "rmse",names_to = "N")%>%mutate(N=as.double(N))%>%
+  ggplot(aes(x=N,y=rmse,color=stocks))+
+  geom_line()+
+  facet_wrap(~stocks,scales = 'free_y')
+  
+
+
+mape_pl_MA=t(mape_MA)%>%as_tibble
+#rmse_pl[,21]=colnames(train)[2:ncol(train)]
+stocks=colnames(train)[2:ncol(train)]
+mape_pl_MA=cbind(stocks,mape_pl_MA)%>%as_tibble
+colnames(mape_pl_MA)=c("stocks",c(1:20))
+mape_pl_pt_MA=mape_pl_MA%>%pivot_longer(cols = -"stocks",values_to = "mape",names_to = "N")%>%mutate(N=as.double(N))%>%
+  ggplot(aes(x=N,y=mape,color=stocks))+
+  geom_line()+
+  facet_wrap(~stocks,scales = 'free_y')
+```
+
+
+```{r}
+rmse_pl_pt_MA
+mape_pl_pt_MA
+
+#the plot shows that when N=1 we get the smallest rmse in each stock, which means that we can just use the last day price to predict the today price. Then we choose N=1 and compute the rmse in test set
+```
+
+```{r}
+MA_pre=MA(test[,2:ncol(test)],N=2)
+MA_rmse=sqrt(colSums((test[3:nrow(test),2:ncol(test)]-MA_pre[3:nrow(MA_pre),])^2))
+
+MA_mape=colSums(abs((test[3:nrow(test),2:ncol(test)]-MA_pre[3:nrow(MA_pre),])/MA_pre[3:nrow(MA_pre),]))
+```
+
+
+```{r}
+MA_rmse
+MA_mape
+#the result shows that it seems MA method is a good predict method if the stocks are from comsumption industry
+```
+
+```{r}
+#then we try to use linear regression to predic the price ,here the thoughts are use the former N price to get the regression price
+
+lr=function(X,N){
+  x=c(1:N)
+  pre=rep(NA,nrow(X)-N)
+  for(i in (N+1):nrow(X)){
+    model=(lm(as.matrix(X[(i-N):(i-1),1])~x,))
+    pre[i]=model$coefficients[1]+model$coefficients[2]*(N+1)
+  }
+  return(pre)
+}
+
+pre_mat_lr=matrix(rep(NA),nrow(train)*(ncol(train)-1)*49)
+dim(pre_mat_lr)=c(nrow(train),ncol(train)-1,49)
+rmse_lr=matrix(rep(NA,49*(ncol(train)-1)),nrow = 49,ncol=ncol(train)-1)
+mape_lr=matrix(rep(NA,49*(ncol(train)-1)),nrow = 49,ncol=ncol(train)-1)
+for(i in 2:49){
+  for(j in 2:ncol(train)){
+    pre_mat_lr[,(j-1),i]=lr(train[,j],i)
+  }
+  rmse_lr[i,]=sqrt(colSums((pre_mat_lr[(i+1):nrow(train),,i]-train[(i+1):nrow(train),2:ncol(train)])^2))
+  mape_lr[i,]=colSums(abs((pre_mat_lr[(i+1):nrow(train),,i]-train[(i+1):nrow(train),2:ncol(train)])/train[(i+1):nrow(train),2:ncol(train)]))
+}
+```
+
+```{r}
+rmse_pl_lr=t(rmse_lr[2:49,])%>%as_tibble
+#rmse_pl[,21]=colnames(train)[2:ncol(train)]
+stocks=colnames(train)[2:ncol(train)]
+rmse_pl_lr=cbind(stocks,rmse_pl_lr)%>%as_tibble
+colnames(rmse_pl_lr)=c("stocks",c(1:48))
+rmse_pl_pt_lr=rmse_pl_lr%>%pivot_longer(cols = -"stocks",values_to = "rmse",names_to = "N")%>%mutate(N=as.double(N))%>%
+  ggplot(aes(x=N,y=rmse,color=stocks))+
+  geom_line()+
+  facet_wrap(~stocks,scales = 'free_y')
+  
+rmse_pl_pt_lr
+apply(rmse_pl_lr[,2:49],1,function(x) which.min(x))
+
+mape_pl_lr=t(mape_lr[2:49,])%>%as_tibble
+#rmse_pl[,21]=colnames(train)[2:ncol(train)]
+stocks=colnames(train)[2:ncol(train)]
+mape_pl_lr=cbind(stocks,mape_pl_lr)%>%as_tibble
+colnames(mape_pl_lr)=c("stocks",c(1:48))
+mape_pl_pt_lr=mape_pl_lr%>%pivot_longer(cols = -"stocks",values_to = "mape",names_to = "N")%>%mutate(N=as.double(N))%>%
+  ggplot(aes(x=N,y=mape,color=stocks))+
+  geom_line()+
+  facet_wrap(~stocks,scales = 'free_y')
+```
+
+
+```{r}
+mape_pl_pt_lr
+apply(mape_pl_lr[,2:49],1,function(x) which.min(x))
+#the model on train data shows that it we could choose either 3 or 4 as hyperparameter and there are no obvious differences among groups
+```
+
+```{r}
+#we choose 3 here as the hyperparameter
+lr_pre=matrix(rep(NA,(ncol(test)-1)*(nrow(test))))
+dim(lr_pre)=c(nrow(test),ncol(test)-1)
+for(j in 2:ncol(test)){
+    lr_pre[,(j-1)]=lr(test[,j],3)
+}
+lr_pre_rmse=sqrt(colSums((lr_pre[4:nrow(test),]-test[4:nrow(test),2:ncol(train)])^2))
+
+
+
+lr_pre_mape=colSums(abs((lr_pre[4:nrow(test),]-test[4:nrow(test),2:ncol(train)])/test[4:nrow(test),2:ncol(train)]))
+```
+
+
+```{r}
+lr_pre_rmse
+lr_pre_mape
+#from the result we can get that still the group of comsuption get the best prediction result
+```
+
+```{r}
+#LSTM
+library(keras)
+library(tensorflow)
+install_keras()
+```
+
+```{r}
+
+lag_transform <- function(x, k= 1){
+        lagged =  c(rep(NA, k), x[1:(length(x)-k)])
+        DF = as.data.frame(cbind(lagged, x))
+        colnames(DF) <- c( paste0('x-', k), 'x')
+        DF[is.na(DF)] <- 0
+        return(DF)
+}
+
+scale_data = function(train, test, feature_range = c(0, 1)) {
+    x = train
+    fr_min = feature_range[1]
+    fr_max = feature_range[2]
+    std_train = ((x - min(x) ) / (max(x) - min(x)  ))
+    std_test  = ((test - min(x) ) / (max(x) - min(x)  ))
+  
+    scaled_train = std_train *(fr_max -fr_min) + fr_min
+    scaled_test = std_test *(fr_max -fr_min) + fr_min
+  
+    return( list(scaled_train = as.vector(scaled_train), scaled_test = as.vector(scaled_test) ,scaler=c(min =min(x), max = max(x))) )
+  }
+
+
+invert_scaling = function(scaled, scaler, feature_range = c(0, 1)){
+    min = scaler[1]
+    max = scaler[2]
+    t = length(scaled)
+    mins = feature_range[1]
+    maxs = feature_range[2]
+    inverted_dfs = numeric(t)
+    
+    for( i in 1:t){
+      X = (scaled[i]- mins)/(maxs - mins)
+      rawValues = X *(max - min) + min
+      inverted_dfs[i] <- rawValues
+    }
+    return(inverted_dfs)
+}
+
+rmse_lstm=(rep(NA,15))
+dim(rmse_lstm)=c(1,15)
+colnames(rmse_lstm)=colnames(close_price)[2:16]
+mape_lstm=(rep(NA,15))
+dim(mape_lstm)=c(1,15)
+colnames(mape_lstm)=colnames(close_price)[2:16]
+for(i in 2:16){
+  Series=as.matrix(close_price[,i])
+  diffed= diff(as.matrix(Series), differences = 1)%>%as.array()
+  
+  supervised = lag_transform(diffed, 1)
+  N = nrow(supervised)
+  n = round(N *0.7, digits = 0)
+  train_lstm=supervised[1:n,]
+  test_lstm=supervised[n:N,]
+
+  Scaled = scale_data(train_lstm, test_lstm, c(-1, 1))
+
+  y_train = Scaled$scaled_train[, 2]
+  x_train = Scaled$scaled_train[, 1]
+
+  y_test = Scaled$scaled_test[, 2]
+  x_test = Scaled$scaled_test[, 1]
+  
+    #install_tensorflow()
+  dim(x_train) <- c(length(x_train), 1, 1)
+  X_shape2 = dim(x_train)[2]
+  X_shape3 = dim(x_train)[3]
+  batch_size = 1                # must be a common factor of both the train and test samples
+  units = 1                     # can adjust this, in model tuninig phase
+  model <- keras_model_sequential() 
+  model%>%
+    layer_lstm(units, batch_input_shape = c(batch_size, X_shape2, X_shape3), stateful= TRUE)%>%
+    layer_dense(units = 1)
+
+  model %>% compile(
+    loss = 'mean_squared_error',
+    optimizer = optimizer_adam( lr= 0.02, decay = 1e-6 ),  
+    metrics = c('accuracy')
+  )
+  
+  Epochs = 50   
+  for(j in 1:Epochs ){
+    model %>% fit(x_train, y_train, epochs=1, batch_size=batch_size, verbose=1, shuffle=FALSE)
+    model %>% reset_states()
+  }
+
+  L = length(x_test)
+  scaler = Scaled$scaler
+  predictions = numeric(L)
+  
+  for(k in 1:L){
+      X = x_test[k]
+      dim(X) = c(1,1,1)
+      yhat = model %>% predict(X, batch_size=batch_size)
+       # invert scaling
+      yhat = invert_scaling(yhat, scaler,  c(-1, 1))
+      # invert differencing
+      yhat  = yhat + Series[(n+k)]
+      # store
+      predictions[k] <- yhat
+  }
+  rmse_lstm[i-1]=sqrt(sum((predictions-Series[n:N])^2))
+  mape_lstm[i-1]=sum(abs((predictions-Series[n:N])/Series[n:N]))
+}
+
+
+```
+
+```{r}
+re_rmse=rbind(MA_rmse,lr_pre_rmse,rmse_lstm)%>%as_tibble()
+
+re_mape=rbind(MA_mape,lr_pre_mape,mape_lstm)%>%as_tibble()
+```
+
+
+```{r}
+re_rmse
+re_mape
+sd
+mean
+#results show no obvious relationship between the group of industry and the prediction accuarcy. However, as campare to the variance we find that actually the stock with lower variance will have a better prediction generally and LSTM always get the best prediction results.But actully different stocks have different price level, so as for the MAPE, we find that comsumption industry have the best prediction
+```
+
+```{r}
+#choose AAPL to show the prediction graph
+  Series=as.matrix(close_price[,c(2)])
+  diffed= diff(as.matrix(Series), differences = 1)%>%as.array()
+  
+  supervised = lag_transform(diffed, 1)
+  N = nrow(supervised)
+  n = round(N *0.7, digits = 0)
+  train_lstm=supervised[1:n,]
+  test_lstm=supervised[n:N,]
+
+  Scaled = scale_data(train_lstm, test_lstm, c(-1, 1))
+
+  y_train = Scaled$scaled_train[, 2]
+  x_train = Scaled$scaled_train[, 1]
+
+  y_test = Scaled$scaled_test[, 2]
+  x_test = Scaled$scaled_test[, 1]
+  
+    #install_tensorflow()
+  dim(x_train) <- c(length(x_train), 1, 1)
+  X_shape2 = dim(x_train)[2]
+  X_shape3 = dim(x_train)[3]
+  batch_size = 1                # must be a common factor of both the train and test samples
+  units = 1                     # can adjust this, in model tuninig phase
+  model <- keras_model_sequential() 
+  model%>%
+    layer_lstm(units, batch_input_shape = c(batch_size, X_shape2, X_shape3), stateful= TRUE)%>%
+    layer_dense(units = 1)
+
+  model %>% compile(
+    loss = 'mean_squared_error',
+    optimizer = optimizer_adam( lr= 0.02, decay = 1e-6 ),  
+    metrics = c('accuracy')
+  )
+  
+  Epochs = 50   
+  for(j in 1:Epochs ){
+    model %>% fit(x_train, y_train, epochs=1, batch_size=batch_size, verbose=1, shuffle=FALSE)
+    model %>% reset_states()
+  }
+
+  L = length(x_test)
+  scaler = Scaled$scaler
+  predictions = numeric(L)
+  
+  for(k in 1:L){
+      X = x_test[k]
+      dim(X) = c(1,1,1)
+      yhat = model %>% predict(X, batch_size=batch_size)
+       # invert scaling
+      yhat = invert_scaling(yhat, scaler,  c(-1, 1))
+      # invert differencing
+      yhat  = yhat + Series[(n+k)]
+      # store
+      predictions[k] <- yhat
+  }
+N=c(1:length(predictions))
+AAPL=cbind(test[,2],MA_pre[,1],lr_pre[,1],predictions,N)
+colnames(AAPL)=c("real","MA","LR","LSTM","N")
+AAPL_pt=AAPL%>%
+  pivot_longer(-N,names_to = "type",values_to = "price")%>%
+  ggplot(aes(x=N,y=price,col=type))+
+  geom_line()
+```
+
+
+```{r}
+AAPL_pt
+
+#some characteristics: LR behave worst when break points apper, the break points of LR function always delayed and the value is also magnified. MA method predicts a more smooth line than real line and it seems that LSTM gets the best predictions
+```
+
+
+```{r}

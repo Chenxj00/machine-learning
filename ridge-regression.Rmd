@@ -1,0 +1,69 @@
+---
+title: "Lab4"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+#Section1
+data.train=read.csv('Lab4_data.csv')
+lm(Y~.+0,data=data.train)$coefficients
+#the coefficient of the last ten vairables are NA
+
+#section2
+my.ridge=function(data.train=data.train,lambda){
+  dim.x=(ncol(data.train)-1)
+  data.train.x=scale(data.train[,1:dim.x])
+  data.train.y=data.train[,ncol(data.train)]
+  xtx=solve(as.matrix(t(data.train.x))%*%as.matrix(data.train.x)+lambda*diag(ncol(data.train.x)))
+  coe=xtx%*%as.matrix(t(data.train.x))%*%data.train.y
+  return(coe)
+}
+beta.R <- my.ridge(data.train=data.train,lambda=.1)
+sum(beta.R^2)
+
+
+```
+```{r}
+lambdalist=c(0.1,0.5,1,10)
+lapply(lambdalist,function(x) sum((my.ridge(data.train=data.train,x))^2))
+#as lambda increase, the value of sum square of beta decrease.
+```
+```{r}
+#Section3
+set.seed(0)
+folds <- sample(rep(1:5,30),150)
+k_folds=function(fold=folds,data,lambda.k){
+  error=rep(NA,5)
+  for (i in 1:5){
+    data.train.k=data[folds!=i,]
+    beta=my.ridge(data.train.k,lambda.k)
+    data.vaild.k=as.matrix(data[folds==i,])
+    error[i]=mean((data.vaild.k[,1:(ncol(data.train)-1)]%*%beta-data.vaild.k[,ncol(data.vaild.k)])^2)
+  }
+  return((mean(error)))
+}
+
+re.k=lapply(seq(0.1,10,0.1),function(x) k_folds(folds,data.train,x))
+
+```
+
+```{r}
+pch=c(1:length(seq(0.1,10,0.1)))
+plot(y=unlist(re.k),x=pch)
+text(x=pch,y=unlist(re.k)+0.1,labels=pch,col='red',cex=0.4)
+k=which.min(unlist(re.k))
+k
+```
+
+```{r}
+data.test <- as.matrix(read.csv(file="Lab4_test.csv"))
+lambda=seq(0.1,10,0.1)[k]
+beta.test=as.matrix(my.ridge(data.train,lambda))
+error.test=mean((data.test[,1:(ncol(data.test)-1)]%*%beta.test-data.test[,ncol(data.test)])^2)
+error.test
+```
+

@@ -1,0 +1,198 @@
+---
+title: "R Notebook"
+output:
+  word_document: default
+  html_notebook: default
+editor_options:
+  chunk_output_type: inline
+---
+```{r}
+#data preparation
+library('tibble')
+library('dplyr')
+train.3=read.table('train_3.txt',header = F,sep=",")
+train.3=as_tibble(train.3)
+train.5=read.table('train_5.txt',header = F,sep=",")
+train.5=as_tibble(train.5)
+train.8=read.table('train_8.txt',header = F,sep=",")
+train.8=as_tibble(train.8)
+full.data.x=bind_rows(train.3,train.5,train.8)
+y=c(rep(3,nrow(train.3)),rep(5,nrow(train.5)),rep(8,nrow(train.8)))
+train.data.x=full.data.x
+y.train=as_tibble(y)
+test.full=as_tibble(read.table('/Users/chenxj00/Documents/Statistical Machine Learning/HW2/zip_test.txt',header=FALSE,sep=""))
+test.data.x.1=test.full%>%filter((V1==3)|(V1==5)|(V1==8))
+y.test=(test.data.x.1[,1])
+for(i in 1:256){
+  test.data.x.1[,i]=test.data.x.1[,i+1]
+}
+test.data.x=test.data.x.1[,1:256]
+train.data=bind_cols(train.data.x,y.train)
+```
+
+```{r}
+library('MASS')
+library('nnet')
+#lda
+lda.train=lda(value~.,train.data)
+lda.pre=predict(lda.train,test.data.x)$class
+lda.test.error=sum(lda.pre!=as.matrix(y.test))/nrow(y.test)
+lda.train.error=sum(predict(lda.train,train.data)$class!=as.matrix(y.train))/nrow(y.train)
+lda.train.error
+lda.test.error
+
+#pca and choose leading 49pc
+scale.train.x=scale(train.data.x)
+pca <- prcomp(scale.train.x)
+lda.pca=lda(value~.,data=bind_cols(as_tibble(pca$x[,1:49]),y.train))
+leading.pca=pca$rotation[,1:49]
+new.feature=as.matrix(test.data.x)%*%as.matrix(leading.pca)
+
+#lda based on the leading 49 pc
+lda.pca.pre=predict(lda.pca,as_tibble(new.feature))$class
+lda.pca.test.error=sum(lda.pca.pre!=as.matrix(y.test))/nrow(y.test)
+lda.pca.train.error=sum(predict(lda.pca,as_tibble(pca$x[,1:49]))$class!=as.matrix(y.train))/nrow(y.train)
+lda.pca.train.error
+lda.pca.test.error
+
+#logistic regression based on the leading 49 pc
+mul=multinom(value~.,data=bind_cols(as_tibble(pca$x[,1:49]),y.train))
+mul.pre=predict(mul,as_tibble(new.feature))
+mul.test.error=sum(mul.pre!=as.matrix(y.test))/nrow(y.test)
+mul.train.error=sum(predict(mul,as_tibble(pca$x[,1:49]))!=as.matrix(y.train))/nrow(y.train)
+mul.train.error
+mul.test.error
+```
+
+```{r}
+#K mean clustering
+library(tidyr)
+library(purrr)
+library(dplyr)
+library(tibble)
+
+#distance function
+distance=function(x,y){
+  dist=sqrt(sum((x-y)^2))
+  return(dist)
+}
+
+#first step sampling the group
+sampling=function(x,N){
+  x=as_tibble(x)
+  group=sample(1:N,nrow(x),replace=T)
+  x=x%>%mutate(group=group)
+  return(x)
+}
+
+#group function,assign each point to the nearst group mean
+group_one=function(point,mean_matrix){
+  dist.vec <- apply(mean_matrix[2:ncol(mean_matrix)],1,function(y) distance(y,point))
+  return(which.min(dist.vec))
+}
+
+#cluster one time
+K.mean.one=function(x_group){
+  gr_mean=x_group%>%
+    mutate(group=as.factor(group))%>%
+    group_by(group)%>%
+    summarise_all(mean,na.rm=T)#compute mean of each group(centroids)
+  group_one=apply(x_group[,1:(ncol(x_group)-1)],1,function(x) group_one(x,gr_mean))
+  return(group_one)
+}
+
+
+K.mean.clustering=function(x,N){
+  sam=sampling(x,N)
+  var.ini=0
+  diff=1000
+  i=0
+  while(diff>10){
+    temp=K.mean.one(sam)
+    sam=sam%>%mutate(group=temp)
+    
+    var=rep(0,N)
+    sam_var=sam%>%group_by(group)%>%summarise_all(mean,na.rm=T)
+    for(i in 1:N){
+      group_data=sam%>%filter(group==i)
+      group_mean=sam_var%>%filter(group==i)
+      var[i]=sum((apply(group_data[,1:(ncol(group_data)-1)],1,function(x) distance(x,group_mean[1,2:ncol(group_mean)])))^2)
+    }
+    diff=abs(sum(var)-var.ini)
+    var.ini=sum(var)
+    i=i+1
+  }
+  group=as.numeric(as.matrix(sam[,(ncol(x)+1)]))
+  
+#compute mean
+  mean=sam%>%group_by(group)%>%summarise_all(mean,na.rm=T)
+  
+  return(list(clustering.vector=group,
+              ite=i,
+              total.within.var=sum(var.ini),
+              centroids=as.matrix(mean[,2:ncol(mean)])))
+}
+```
+
+```{r}
+#testing manual kmean
+data=as_tibble(read.csv('P5ClusterData.csv'))
+a=K.mean.clustering(data,5)
+table(a$clustering.vector)
+table(kmeans(data,5)[1])
+sum(unlist((kmeans(data,5,300))[4]))
+a$total.within.var
+
+b=K.mean.clustering(data,4)
+table(b$clustering.vector)
+table(kmeans(data,4)[1])
+sum(unlist((kmeans(data,4,300))[4]))
+b$total.within.var
+
+c=K.mean.clustering(data,3)
+table(c$clustering.vector)
+table(kmeans(data,3)[1])
+sum(unlist((kmeans(data,3,300))[4]))
+c$total.within.var
+#the manual function goes well, and the total variance within the groups are very close although the cluters are not the same as "kmeans" function because of randomness in the first step. There are two major drawbacks of the manual function, the first one is that the speed of the function is far lower than that "kmeans". The second one is that sometime the function will cluster the data less than the required number of clusters.
+```
+
+```{r}
+#P5.1
+library(quantmod)
+
+sym=c("MMM","AXP","AAPL","BA","CAT","CVX","CSCO","KO","DIS","UTX","XOM","WBA","GS","HD","IBM","INTC","JNJ","JPM","MCD","MRK","MSFT","NKE","PFE","TRV","UNH","VZ","V","WMT","WBA")
+Stocks = lapply(sym, function(sym) {
+  (na.omit(getSymbols(sym, src='yahoo',from="2019-01-01",to="2020-01-01", auto.assign=FALSE))[,4])
+})
+Stocks_tib=as_tibble(do.call(merge, Stocks))
+
+
+
+```
+```{r}
+#P5.2
+pca.unsacle=prcomp(Stocks_tib,scale = F)
+biplot(pca.unsacle,cex=0.5)
+screeplot(pca.unsacle)
+#the data konds of divided into three groups and it seems that there only one pricipal component is enough
+```
+
+```{r}
+#P5.3
+pca.scale=prcomp(Stocks_tib,scale = T)
+biplot(pca.scale,cex=0.5)
+screeplot(pca.scale)
+#The three groups seem more obvious than the unscale version, it seems that two to three PCs are reasonable choice
+```
+
+```{r}
+#P5.4
+return=as_tibble(apply(Stocks_tib,2,diff)/Stocks_tib[2:nrow(Stocks_tib),])
+return.pca.scale=prcomp(return,scale=T)
+biplot(return.pca.scale,cex=0.5)
+screeplot(return.pca.scale)
+#The total information of the DJI can be represented by 2 or 3 PCs.
+#If they are fluctuating up and down randomly, each of PC in screeplot will have similar value in variance or the PC1 is extremely large than other PCs
+```
+

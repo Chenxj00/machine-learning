@@ -1,0 +1,106 @@
+---
+
+The dataset **Default** is taken from the ISLR package. This lab will help solidify the ROC curve and choosing an optimal threshold based on the logistic regression model. 
+
+```{r}
+library(ISLR)
+library('purrr')
+library('tibble')
+dim(Default)
+head(Default,4)
+```
+
+The below code constructs a training and testing set using a 70\% (train) 30\% (test) split. 
+
+```{r}
+n.full <- nrow(Default)
+n.full
+n.test <- floor(.3*n.full)
+n.test
+test.index <- sample(1:n.full,n.test)
+test.data <- Default[test.index,] 
+train.data <- Default[-test.index,] 
+n.train <- nrow(train.data)
+n.train
+```
+
+```{r}
+mean(train.data$student=="Yes" & train.data$default=="Yes")
+mean(train.data$default=="Yes")
+mean(test.data$student=="Yes" & test.data$default=="Yes")
+mean(test.data$default=="Yes")
+```
+
+```{r}
+my.data <- train.data[,c("balance","income")]
+my.data$default <- ifelse(train.data$default=="Yes",1,0)
+plot(my.data$balance,my.data$income,col=factor(my.data$default),cex=.5)
+```
+
+1) Fit the logistic regression model based on the training data. To train this model, regress **default** against the three features **student**, **balance**, and **income**. Also compute the training error and testing error for this model. 
+
+```{r}
+threshold=0.5
+sigmoid <- function(u) {1/(1+exp(-u))}
+model1=glm(default~student+balance+income,family = binomial,data=train.data)
+train.y.pre=ifelse(sigmoid(predict(model1,train.data))>threshold,"Yes","No")
+train.y=train.data$default
+train.error=1-sum(train.y.pre==train.y)/length(train.y)
+
+test.y.pre=ifelse(sigmoid(predict(model1,test.data))>threshold,"Yes","No")
+test.y=test.data$default
+test.error=1-sum(test.y.pre==test.y)/length(test.y)
+
+train.error
+test.error
+```
+
+2) Write a function named **ROC.logistic()** that inputs the trained logistic model and an evaluation dataset (train or test). The function should output; i) ROC curve, AUC, and iii) the optimal threshold based on minimum 0-1 loss. Note in class we introduced Youden's $J$ statistic but we will use the more common 0-1 loss in this lab.  
+ 
+
+```{r}
+ROC.logistic <- function(model, data) { # define a threshold vector
+  prob.vec <- seq(0,1,by=.005)
+  R <- length(prob.vec)
+  sigmoid <- function(u) {1/(1+exp(-u))}
+  true.pos <- rep(0,R) 
+  false.pos <- rep(0,R) 
+  error <- rep(0,R)
+  v <- sigmoid(predict.glm(model, newdata = data)) 
+  y.char <- factor(ifelse(data$default == "Yes","Y", "N"))   
+  for (i in 1:R) {
+    y.hat.char <- factor(ifelse(v > prob.vec[i],"Y","N"), levels=c("N","Y")) # TP = P(Y.hat = 1 | Y = 1)
+    true.pos[i] <- table(y.hat.char,y.char)[2,2]/sum(table(y.hat.char,y.char)[,2])
+      # FP = P(Y.hat = 1 | Y = 0)
+    false.pos[i] <- table(y.hat.char,y.char)[2,1]/sum(table(y.hat.char,y.char)[,1])
+    error[i] <- (table(y.hat.char,y.char)[1,2]+table(y.hat.char,y.char)[2,1])/sum(table(y.hat.char,y.char))
+  }
+  optimal.threshold <- prob.vec[which.min(error)]
+  plot(false.pos,true.pos,type="l",col="blue",main="ROC: Model = Logistic") 
+  abline(a=0,b=1,lty=3)
+  AUC <- sum((true.pos[order(false.pos)][-1])*diff(false.pos[order(false.pos) ]))
+  return(list(AUC = AUC, optimal.threshold = optimal.threshold)) 
+}
+```
+
+3) Run **ROC.logistic()** on both the training and testing data.  
+
+
+```{r}
+ROC.logistic(model1,data=train.data)
+ROC.logistic(model1,data=test.data)
+```
+
+4) Compute the test error for the $p=.5$ threshold versus the optimal threshold based on the test data.
+
+
+```{r}
+test.y.pre1=(sigmoid(predict(model1,test.data))>ROC.logistic(model1,test.data)$optimal.threshold)
+test.y1=test.data$default=="Yes"
+test.error1=1-sum(test.y.pre1==test.y1)/length(test.y1)
+test.error1
+test.error
+##they are very close and the optimal threshold even produce smaller error with largest AUC.
+##Thus do not change
+```
+

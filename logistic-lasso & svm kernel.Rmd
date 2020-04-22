@@ -1,0 +1,121 @@
+---
+title: "hw4"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+set.seed(1)
+p1.5=read.table('/Users/chenxj00/Documents/Statistical Machine Learning/train_5.txt',header = F,sep=",")
+label.5=rep(1,nrow(p1.5))
+p1.5.full=cbind(p1.5,label=as.factor(label.5))
+chose.5=sample(c(1:nrow(p1.5)),nrow(p1.5)*0.2)
+p1.5.train=p1.5.full[-c(chose.5),]
+p1.5.test=p1.5.full[chose.5,]
+p1.6=read.table('/Users/chenxj00/Documents/Statistical Machine Learning/train_6.txt',,header = F,sep=",")
+label.6=rep(2,nrow(p1.6))
+p1.6.full=cbind(p1.6,label=as.factor(label.6))
+chose.6=sample(c(1:nrow(p1.6)),nrow(p1.6)*0.2)
+p1.6.train=p1.6.full[-chose.6,]
+p1.6.test=p1.6.full[chose.6,]
+p1.data.train=data.frame(rbind(p1.5.train,p1.6.train))
+p1.data.test=data.frame(rbind(p1.5.test,p1.6.test))
+
+```
+
+```{r}
+library(e1071)
+set.seed(1)
+model1cost=c(0.001,0.01,0.1,1,10,100)
+model1=tune.svm(label~.,data=p1.data.train,type='C',cross=5,cost=model1cost,kernel='linear',scale=F)
+model2=tune.svm(label~.,data=p1.data.train,type="C-classification",kernel="radial",gamma=c(0.001,0.01,0.1,1),cost=c(1,5,10,15),scale=F)
+
+
+```
+
+```{r}
+pre1=predict(model1$best.model,p1.data.test[,-257])
+pre2=predict(model2$best.model,p1.data.test[,-257])
+missrate1=sum(pre1!=p1.data.test[,257])/nrow(p1.data.test)
+missrate2=sum(pre2!=p1.data.test[,257])/nrow(p1.data.test)
+```
+
+```{r}
+set.seed(1)
+n=length(model1cost)
+linear.error=rep(NA,n)
+for(i in 1:n){
+  linear.error[i]=svm(label~.,data=p1.data.train,cost=model1cost[i],type='C',cross=5,kernel='linear',scale=F)$tot.accuracy
+}
+plot(c(1:n),100-linear.error,type="l",xaxt="n",yaxt="n")
+axis(1,at=c(1:n),label=model1cost)
+plot(model2)
+
+missrate1
+model1$best.parameters
+missrate2
+model2$best.parameters
+
+```
+
+```{r}
+p2.data=read.table('/Users/chenxj00/Documents/Statistical Machine Learning/LogisticLasso.csv',sep=",")
+ST.j <- function(j,beta.vec,lambda.temp=1) {
+  #j <- 20
+  St.out <- ifelse(beta.vec[j] > lambda.temp,beta.vec[j]-lambda.temp,
+                   ifelse(beta.vec[j] < -1*lambda.temp,beta.vec[j]+lambda.temp,
+                          0))
+  return(St.out)
+  
+} 
+
+
+lassomannual=function(data,lambda,n){
+  beta.matrix=matrix(rep(0,ncol(data)*n),nrow=n,ncol=ncol(data))
+  beta.guess <- rnorm(ncol(data),sd=.1)
+  beta.matrix[1,] <- beta.guess
+  data.train=apply(cbind(v0=1,data)[-1,],2,as.numeric)
+  for (i in 2:n){
+    beta.pre=as.matrix(beta.matrix[i-1,])
+    gradient=rep(0,ncol(data))
+    temp=data.train[,-ncol(data.train)]%*%beta.pre
+    gradient[1]=mean(data.train[,ncol(data.train)]+exp(temp)/(1+exp(temp)))
+    for (j in 2:ncol(data)){
+    gradient[j]=mean(data.train[,ncol(data.train)]*data.train[,j]+exp(temp)*data.train[,j]/(1+exp(temp)))
+  }
+    beta.matrix[i,]=sapply(1:ncol(data),
+                   ST.j,
+                   beta.vec=-gradient+beta.pre,
+                   lambda.temp=lambda)
+}
+  return(beta.matrix[n,])
+}
+
+```
+
+```{r}
+lassomannual(p2.data,0.05,10)
+library(glmnet)
+
+my.lasso.data <- read.csv(file= '/Users/chenxj00/Documents/Statistical Machine Learning/LogisticLasso.csv')
+gml.model <- glmnet(x=as.matrix(my.lasso.data[,1:10]),y=my.lasso.data[,11],
+family="binomial",alpha = 1,intercept=T, lambda=.05)
+
+c(gml.model$a0,gml.model$beta[,1])
+
+```
+
+```{r}
+p2.zip=rbind(p1.5.full,p1.6.full)
+lassomannual(p2.zip,0.05,10)[1:30]
+gml.model2 <- glmnet(x=as.matrix(p2.zip[,1:256]),y=p2.zip[,257],
+family="binomial",alpha = 1,intercept=T, lambda=.05)
+
+c(gml.model2$a0,gml.model2$beta[,1])[1:30]
+```
+
