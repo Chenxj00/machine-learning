@@ -1,0 +1,116 @@
+---
+title: "R Notebook"
+output:
+  word_document: default
+  pdf_document: default
+  html_notebook: default
+---
+
+```{r}
+library(purrr)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+data=read.csv("y.csv")
+plot(x=data[,1],y=data[,2])
+```
+
+
+```{r}
+#差分指数平滑
+library(tibble)
+library(purrr)
+library(dplyr)
+alpha=0.3
+
+diff_avg=tibble(data=data[,2])%>%mutate(diff=c(NA,diff(data)))
+diff_avg_data=c(NA,NA,rep(0,145))
+for(i in 4:147){
+  diff_avg_data[i]=diff_avg[i-1,2]*0.4+unlist(diff_avg_data[i-1])*0.6
+}
+diff_avg=diff_avg%>%mutate(diff_avg_data=unlist(diff_avg_data))%>%mutate(pre=data-diff+diff_avg_data)
+diff_avg
+plot(diff_avg$pre)
+points(data[,2],col="red")
+#看起来对滞后的问题有一定解决，但是因为做了差分没法看出原数据模式
+```
+```{r}
+#HP滤波
+library(mFilter)
+hp=hpfilter(data$VAS,type="lambda",freq=129600)
+plot(hp$cycle,type="l",,ylim=-c(0.2,-0.2))
+lines(hp$trend,col="red")
+
+#循环波动看起来并不是那么值得信任（没有特定模式）,而且很明显对于尾部异常点的处理不是很理想，但是长期趋势看起来较为合理
+
+
+```
+
+
+```{r}
+
+#小波
+library(waveslim)
+data <- data %>%
+  mutate(dVAS = VAS - lag(VAS, 1))
+y <- na.omit(data$dVAS)
+
+
+wave_VAS <- mra(y, J = 4)
+wave_VAS <- as_tibble(wave_VAS)
+
+temp <- wave_VAS %>%
+  gather(key = "imf", value = "value") %>%
+  mutate(imf=as.factor(imf))%>%
+  group_by(imf) %>%
+  mutate(date = data$time[-1])%>%ungroup()
+
+library(ggplot2)
+temp%>%ggplot( aes(x = date, y = value)) +
+  geom_line(aes(group=imf)) +
+  facet_wrap(~imf,scales = "free") +
+  labs(title = "Wavelets",
+       x = "Quarter", y = "")
+
+```
+
+```{r}
+#EMD
+library(EMD)
+emd_re=EMD::emd(xt=data$VAS,tol=0.25)
+emd=EMD::emd(xt=data$VAS,tol=0.25)$imf%>%as_tibble()%>%pivot_longer(everything(),names_to = "ith",values_to = "value")%>%group_by(ith) %>%
+  mutate(date = data$time)%>%ungroup()
+emd_plot=emd%>%ggplot(aes(x=date,y=value))+
+  geom_line(aes(group=ith)) +
+  facet_wrap(~ith,scales = "free") +
+  labs(title = "ith",
+       x = "Quarter", y = "")
+emd_plot
+```
+```{r}
+#EEMD
+library(Rlibeemd)
+trials <- 5
+nimf <- 5
+noise.amp <- 6.4e-02
+trials.dir <- "test"
+eemd_re=Rlibeemd::eemd(data$VAS,num_imfs=5)
+eemd=eemd_re%>%as_tibble()%>%pivot_longer(-Residual,names_to = "ith",values_to = "value")%>%group_by(ith) %>%
+  mutate(date = data$time)%>%ungroup()%>%select("ith","value","date")
+
+eemd_plot=eemd%>%ggplot(aes(x=date,y=value))+
+  geom_line(aes(group=ith)) +
+  facet_wrap(~ith,scales = "free") +
+  labs(title = "ith",
+       x = "Quarter", y = "")
+eemd_plot
+```
+
+```{r}
+plot(emd_re$imf[,1],type="l")
+lines(wave_VAS$D1,col="blue")
+#lines(hp$cycle,col="red")
+#tol设为0.25时，emd和hp产生结果有相似之处，和小波结果有较大不同
+```
+
+```{r}
