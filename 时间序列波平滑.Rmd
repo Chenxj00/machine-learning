@@ -37,7 +37,7 @@ points(data[,2],col="red")
 ```{r}
 #HP滤波
 library(mFilter)
-hp=hpfilter(data$VAS,type="lambda",freq=129600)
+hp=hpfilter(data$VAS,type="lambda",freq=1600)
 plot(hp$cycle,type="l",,ylim=-c(0.2,-0.2))
 lines(hp$trend,col="red")
 
@@ -56,14 +56,14 @@ data <- data %>%
 y <- na.omit(data$dVAS)
 
 
-wave_VAS <- mra(y, J = 4)
+wave_VAS <- waveslim::mra(data$VAS, J = 4)
 wave_VAS <- as_tibble(wave_VAS)
 
 temp <- wave_VAS %>%
   gather(key = "imf", value = "value") %>%
   mutate(imf=as.factor(imf))%>%
   group_by(imf) %>%
-  mutate(date = data$time[-1])%>%ungroup()
+  mutate(date = c(1:147))%>%ungroup()
 
 library(ggplot2)
 temp%>%ggplot( aes(x = date, y = value)) +
@@ -76,27 +76,25 @@ temp%>%ggplot( aes(x = date, y = value)) +
 
 ```{r}
 #EMD
-library(EMD)
-emd_re=EMD::emd(xt=data$VAS,tol=0.25)
-emd=EMD::emd(xt=data$VAS,tol=0.25)$imf%>%as_tibble()%>%pivot_longer(everything(),names_to = "ith",values_to = "value")%>%group_by(ith) %>%
-  mutate(date = data$time)%>%ungroup()
-emd_plot=emd%>%ggplot(aes(x=date,y=value))+
+library(Rlibeemd)
+emd_re=Rlibeemd::emd(data$VAS,num_imfs=6)
+
+
+emd1=Rlibeemd::emd(data$VAS,num_imfs=6)%>%as_tibble()%>%pivot_longer(-Residual,names_to = "ith",values_to = "value")%>%group_by(ith) %>%
+  mutate(date = c(1:147))%>%ungroup()
+emd1_plot=emd1%>%ggplot(aes(x=date,y=value))+
   geom_line(aes(group=ith)) +
   facet_wrap(~ith,scales = "free") +
   labs(title = "ith",
        x = "Quarter", y = "")
-emd_plot
+emd1_plot
 ```
 ```{r}
 #EEMD
 library(Rlibeemd)
-trials <- 5
-nimf <- 5
-noise.amp <- 6.4e-02
-trials.dir <- "test"
 eemd_re=Rlibeemd::eemd(data$VAS,num_imfs=5)
 eemd=eemd_re%>%as_tibble()%>%pivot_longer(-Residual,names_to = "ith",values_to = "value")%>%group_by(ith) %>%
-  mutate(date = data$time)%>%ungroup()%>%select("ith","value","date")
+  mutate(date = c(1:147))%>%ungroup()%>%select("ith","value","date")
 
 eemd_plot=eemd%>%ggplot(aes(x=date,y=value))+
   geom_line(aes(group=ith)) +
@@ -107,10 +105,88 @@ eemd_plot
 ```
 
 ```{r}
-plot(emd_re$imf[,1],type="l")
-lines(wave_VAS$D1,col="blue")
-#lines(hp$cycle,col="red")
-#tol设为0.25时，emd和hp产生结果有相似之处，和小波结果有较大不同
+
+```
+```{r}
+wave_Daubechies4=waveslim::mra(data$VAS,"d4",4)
+wave_Best_localized=waveslim::mra(data$VAS,"bl14",4)
+eemd_6=Rlibeemd::eemd(data$VAS,num_imfs=6)
+emd=Rlibeemd::emd(data$VAS,num_imfs=6)
+trend=tibble(hp=as.double(hp$trend),wavelets=c(wave_VAS$S4),emd=as.double(emd[,6]+emd[,5]),eemd=as.double(eemd_re[,4]+eemd_re[,5]),eemd_6=as.double(eemd_6[,6]+eemd_6[,5]),wave_D4=c(wave_Daubechies4$S4),wave_bl10=c(wave_Best_localized$S4))
+trend_data=trend%>%pivot_longer(everything(),names_to = "method",values_to = "value")%>%group_by(method) %>%mutate(date = c(1:147))%>%ungroup()
+trend_plot=trend_data%>%ggplot(aes(x=date,y=value))+
+  geom_line(aes(group=method,color=method))+
+  labs(title="comparision among methods") 
+
+trend_plot
+trend_data_withouhp=trend_data%>%filter(method!="hp")
+trend_plot_withouhp=trend_data_withouhp%>%
+  ggplot(aes(x=date,y=value))+
+  geom_line(aes(group=method,color=method))+
+  labs(title="comparision among methods(excluding hp）") 
+trend_plot_withouhp
+#可以看到各种小波基包括d4(Daubechies),la8(LeastAsymetric),bl14(BestLocalized)
+#当划分IMF数相同时，eemd与emd结果接近，但是eemd相对方差更小一些,hp滤波方法产生
+#长期趋势和其他较为不同（原理不同）
 ```
 
 ```{r}
+n=100
+hp_robust=matrix(rep(NA,length(data$VAS)*(length(data$VAS)-n+1)),nrow=147)
+
+for(i in n:length(data$VAS)){
+  temp=hpfilter(data$VAS[1:i],type="lambda",freq=129600)$trend
+  hp_robust[1:length(temp),i-(n-1)]<-temp
+}
+hp_robust_data=hp_robust%>%as.tibble()%>%pivot_longer(everything(),names_to = "number",values_to = "value")%>%group_by(number) %>%mutate(date = c(1:147))%>%ungroup()
+hp_robust_plot=hp_robust_data%>%ggplot(aes(x=date,y=value))+
+  geom_line(aes(group=number,color=number))+
+  labs(title="hp") 
+hp_robust_plot
+```
+
+```{r}
+wavelet_robust=matrix(rep(NA,length(data$VAS)*(length(data$VAS)-n+1)),nrow=147)
+
+for(i in n:length(data$VAS)){
+  temp=waveslim::mra(data$VAS[1:i],"la8",4)$S4
+  wavelet_robust[1:length(temp),i-(n-1)]<-temp
+}
+wavelet_robust_data=wavelet_robust%>%as.tibble()%>%pivot_longer(everything(),names_to = "number",values_to = "value")%>%group_by(number) %>%mutate(date = c(1:147))%>%ungroup()
+wavelet_robust_plot=wavelet_robust_data%>%ggplot(aes(x=date,y=value))+
+  geom_line(aes(group=number,color=number))+
+  labs(title="wavelets") 
+wavelet_robust_plot
+#小波变换也不是稳定的，中间断相对稳定，但是头部和尾部都不robust
+```
+
+```{r}
+eemd_robust=matrix(rep(NA,length(data$VAS)*(length(data$VAS)-n+1)),nrow=147)
+
+for(i in n:length(data$VAS)){
+  temp=as.double(Rlibeemd::eemd(data$VAS[1:i],num_imfs=6)[,5])
+  eemd_robust[1:length(temp),i-(n-1)]<-temp
+}
+eemd_robust_data=eemd_robust%>%as.tibble()%>%pivot_longer(everything(),names_to = "number",values_to = "value")%>%group_by(number) %>%mutate(date = c(1:147))%>%ungroup()
+eemd_robust_plot=eemd_robust_data%>%ggplot(aes(x=date,y=value))+
+  geom_line(aes(group=number,color=number))+
+  labs(title="EEMD") 
+eemd_robust_plot
+#eemd前期似乎较为稳定，但是模式会突然出现改变？
+```
+
+```{r}
+emd_robust=matrix(rep(NA,length(data$VAS)*(length(data$VAS)-n+1)),nrow=147)
+
+for(i in n:length(data$VAS)){
+  temp=as.double(Rlibeemd::emd(data$VAS[1:i],num_imfs=6)[,5])
+  emd_robust[1:length(temp),i-(n-1)]<-temp
+}
+emd_robust_data=emd_robust%>%as.tibble()%>%pivot_longer(everything(),names_to = "number",values_to = "value")%>%group_by(number) %>%mutate(date = c(1:147))%>%ungroup()
+emd_robust_plot=emd_robust_data%>%ggplot(aes(x=date,y=value))+
+  geom_line(aes(group=number,color=number))+
+  labs(title="EMD") 
+emd_robust_plot
+#emd比eemd更不稳定，都是能保证数据点在某一段内有相对类似的模式。
+```
+
