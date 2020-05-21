@@ -1,0 +1,199 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(tibble)
+library(purrr)
+
+X_temp=readxl::read_xlsx("复权_close_08年到现在绝对连续.xlsx")
+X=X_temp[1:(nrow(X_temp)-4),]
+y_temp=read.csv("y.csv")
+y_wavelet=waveslim::mra(y_temp[1:(nrow(y_temp)-3),2], J = 4)$S4
+y_eemd=rowSums((Rlibeemd::eemd(y_temp[1:(nrow(y_temp)-3),2],num_imfs=6))[,5:6])
+data_wavelet=as.tibble(cbind(X,y_wavelet))
+data_eemd=as.tibble(cbind(X,y_eemd))
+```
+
+```{r}
+#datapre
+
+library(caTools)
+data_wavelet_scale=data_wavelet[,-1]
+data_wavelet_scale[,1:(ncol(data_wavelet_scale)-1)]=apply(data_wavelet_scale[,1:(ncol(data_wavelet_scale)-1)],2,scale)
+sample_wave = sample.split(y_wavelet,SplitRatio = 0.8)
+train_wavelet =subset(data_wavelet_scale,sample_wave==TRUE)
+test_wavelet=subset(data_wavelet_scale, sample_wave==FALSE)
+
+data_eemd_scale=data_eemd[,-1]
+data_eemd_scale[,1:(ncol(data_eemd_scale)-1)]=apply(data_eemd_scale[,1:(ncol(data_eemd_scale)-1)],2,scale)
+sample_eemd = sample.split(y_eemd,SplitRatio = 0.8)
+train_eemd =subset(data_eemd_scale,sample_eemd ==TRUE)
+test_eemd=subset(data_eemd_scale, sample_eemd==FALSE)
+```
+
+```{r}
+library(e1071)
+
+#svm
+
+tunesvm2wave=tune.svm(y_wavelet~.,data=train_wavelet,type="nu-regression",kernel="radial",gamma=c(0.001,0.01,0.1,1),cost=c(1,5,10,15),nu=c(0.01,0.2,0.5,0.8),scale=F,tunecontrol=tune.control(sampling="cross",cross=10))$best.parameters
+
+
+tunesvm2eemd=tune.svm(y_eemd~.,data=train_eemd,type="nu-regression",kernel="radial",gamma=c(0.001,0.01,0.1,1),cost=c(1,5,10,15),nu=c(0.01,0.2,0.5,0.8),scale=F,tunecontrol=tune.control(sampling="cross",cross=10))$best.parameters
+
+
+
+```
+```{r}
+tunesvm2wave
+tunesvm2eemd
+```
+
+```{r}
+
+svmwave2=svm(y_wavelet~.,data=train_wavelet,type="nu-regression",kernel="radial",gamma=0.001,cost=10,nu=0.8,cross=10)
+
+svmeemd2=svm(y_eemd~.,data=train_eemd,type="nu-regression",kernel="radial",gamma=0.001,cost=5,nu=0.8,cross=10)
+sqrt(svmeemd2$tot.MSE)
+sqrt(svmwave2$tot.MSE)
+```
+
+
+```{r}
+pre_wave=predict(svmwave2,test_wavelet[,1:464])
+pre_eemd=predict(svmeemd2,test_eemd[,1:464])
+plot(test_wavelet$y_wavelet,type="l",col="blue")
+lines(pre_wave,col="green")
+legend("topright",legend=c("true","predict"),fill=c("blue","green"))
+
+plot(test_eemd$y_eemd,col="red",type="l")
+lines(pre_eemd,col="black")
+legend("topright",legend=c("true","predict"),fill=c("red","black"))
+
+msesvmwave=sqrt(mean((pre_wave-test_wavelet$y_wavelet)^2))
+msesvmeemd=sqrt(mean((pre_eemd-test_eemd$y_eemd)^2))
+msesvmeemd
+msesvmwave
+
+```
+
+```{r}
+#randomforest
+library(randomForest)
+library(stringr)
+
+standr_name=gsub(".*?([0-9]+).*", "\\1", colnames(train_wavelet)[1:464])
+
+standr_name=paste0( "V", standr_name)
+colnames(train_wavelet)[1:464]=standr_name
+colnames(test_wavelet)[1:464]=standr_name
+colnames(train_eemd)[1:464]=standr_name
+colnames(test_eemd)[1:464]=standr_name
+rdf_wave=tune.randomForest(y_wavelet~.,data=train_wavelet,nodesize=c(5,10,20,40),mtry=c(50,100,200,400),ntree=c(100,500,1000),tune.control(cross=5))
+rdf_eemd=tune.randomForest(y_eemd~.,data=train_eemd,nodesize=c(5,10,20,40),mtry=c(50,100,200,400),ntree=c(100,500,1000),tune.control(cross=5))
+```
+
+```{r}
+rdf_best_wave=randomForest(y_wavelet~.,data=train_wavelet,nodesize=5,mtry=50,ntree=100)
+rdf_best_eemd=randomForest(y_eemd~.,data=train_eemd,nodesize=5,mtry=100,ntree=500)
+
+sqrt(mean(rdf_best_eemd$mse))
+sqrt(mean(rdf_best_wave$mse))
+
+pre_rdf_wave=predict(rdf_best_wave,test_wavelet[,1:464])
+pre_rdf_eemd=predict(rdf_best_eemd,test_eemd[,1:464])
+
+plot(test_wavelet$y_wavelet,type="l",col="blue")
+lines(pre_rdf_wave,col="green")
+legend("topright",legend=c("true","predict"),fill=c("blue","green"))
+
+plot(test_eemd$y_eemd,col="red",type="l")
+lines(pre_rdf_eemd,col="black")
+legend("topright",legend=c("true","predict"),fill=c("red","black"))
+
+mserdfwave=sqrt(mean((pre_rdf_wave-test_wavelet$y_wavelet)^2))
+mserdfeemd=sqrt(mean((pre_rdf_eemd-test_eemd$y_eemd)^2))
+mserdfwave
+mserdfeemd
+```
+```{r}
+#xgboost
+
+library('xgboost')
+library(mlr)
+library(data.table)
+dtrain.wave=xgb.DMatrix(data=as.matrix(train_wavelet[,-ncol(train_wavelet)]),label=(train_wavelet$y_wavelet))
+dtest.wave<- xgb.DMatrix(data = as.matrix(test_wavelet[,-ncol(test_wavelet)]),label=test_wavelet$y_wavelet)
+
+dtrain.eemd=xgb.DMatrix(data=as.matrix(train_eemd[,-ncol(train_eemd)]),label=(train_eemd$y_eemd))
+dtest.wave<- xgb.DMatrix(data = as.matrix(test_eemd[,-ncol(test_eemd)]),label=test_eemd$y_eemd)
+
+#params_wave <- list(booster = "gbtree", objective = "reg:squarederror", eta=0.3, gamma=0, max_depth=6, min_child_weight=1, subsample=1, colsample_bytree=1)
+
+
+#xgbcv_wave <- xgb.cv( params = params, data = dtrain.wave, nrounds = 100, nfold = 5, showsd = T, stratified = T, print.every.n = 10, early.stop.round = 20, maximize = F)
+
+#xgb1 <- xgb.train (params = params, data = dtrain.wave, nrounds = 79, watchlist = list(val=dtest.wave,train=dtrain.wave), print.every.n = 10, early.stop.round = 10, maximize = F)
+
+```
+
+```{r}
+
+
+
+
+traintask_wave <- makeRegrTask (data =train_wavelet,target ='y_wavelet')
+testtask_wave <- makeRegrTask (data = test_wavelet,target = 'y_wavelet')
+traintask_eemd <- makeRegrTask (data =train_eemd,target ='y_eemd')
+testtask_eemd <- makeRegrTask (data = test_eemd,target = 'y_eemd')
+
+lrn_wave <- makeLearner("regr.xgboost")
+lrn_eemd <- makeLearner("regr.xgboost")
+
+
+lrn_wave$par.vals <- list( objective="reg:squarederror", eval_metric="rmse", nrounds=100L, eta=0.1)
+lrn_eemd$par.vals <- list( objective="reg:squarederror", eval_metric="rmse", nrounds=100L, eta=0.1)
+
+params_wave <- makeParamSet( makeDiscreteParam("booster",values = c("gbtree","gblinear")), makeIntegerParam("max_depth",lower = 3L,upper = 10L), makeNumericParam("min_child_weight",lower = 1L,upper = 10L), makeNumericParam("subsample",lower = 0.5,upper = 1), makeNumericParam("colsample_bytree",lower = 0.5,upper = 1))
+params_eemd <- makeParamSet( makeDiscreteParam("booster",values = c("gbtree","gblinear")), makeIntegerParam("max_depth",lower = 3L,upper = 10L), makeNumericParam("min_child_weight",lower = 1L,upper = 10L), makeNumericParam("subsample",lower = 0.5,upper = 1), makeNumericParam("colsample_bytree",lower = 0.5,upper = 1))
+
+ctrl <- makeTuneControlRandom(maxit = 10L)
+```
+
+```{r}
+
+
+mytune_wave <- tuneParams(learner = lrn_wave, task = traintask_wave, resampling = cv10, par.set = params_wave, control = ctrl, show.info = T)
+
+mytune_eemd <- tuneParams(learner = lrn_eemd, task = traintask_eemd, resampling = cv10, par.set = params_eemd, control = ctrl, show.info = T)
+
+```
+
+```{r}
+
+lrn_tune_wave <- setHyperPars(lrn_wave,par.vals = mytune_wave$x)
+lrn_tune_eemd <- setHyperPars(lrn_eemd,par.vals = mytune_eemd$x)
+
+xgmodel_wave <- mlr::train(learner = lrn_tune_wave,task = traintask_wave)
+xgmodel_eemd <- mlr::train(learner = lrn_tune_eemd,task = traintask_eemd)
+
+xgpred_wave <- predict(xgmodel_wave,testtask_wave)
+mse_xg_wave=sqrt(mean((xgpred_wave$data[,2]-xgpred_wave$data[,3])^2))
+mse_xg_wave
+
+xgpred_eemd <- predict(xgmodel_eemd,testtask_eemd)
+mse_xg_eemd=sqrt(mean((xgpred_eemd$data[,2]-xgpred_eemd$data[,3])^2))
+mse_xg_eemd
+
+plot(xgpred_eemd$data[,2],type="l",col="blue")
+lines(xgpred_eemd$data[,3],col="red")
+legend("topright",legend=c("true","predict"),fill=c("blue","red"))
+
+plot(xgpred_wave$data[,2],type="l",col="black")
+lines(xgpred_wave$data[,3],col="green")
+legend("topright",legend=c("true","predict"),fill=c("black","green"))
+
+
+```
